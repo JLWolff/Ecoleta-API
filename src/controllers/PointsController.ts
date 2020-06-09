@@ -1,9 +1,9 @@
-import { Request, Response, response, request } from 'express';
-import knex from '../database/connection';
+import { Request, Response, response, request, json } from 'express';
+import knex from '../connection';
 
 
 class PointsController {
-    async create(req: Request, res: Response){
+    create(req: Request, res: Response){
         const {
             name,
             email,
@@ -15,8 +15,6 @@ class PointsController {
             items,
         } = req.body;
     
-        const trx = await knex.transaction();
-
         const point = {
             image: req.file.filename,
             name,
@@ -27,29 +25,54 @@ class PointsController {
             city,
             uf,
         }
-    
-        const insertedIds = await trx('points').insert(point);
-    
-        const point_id = insertedIds[0];
-    
-        const pointItems = items
-            .split(',')
-            .map((item:string) => Number(item.trim()))
-            .map((item_id: number) =>{
-                return {
-                    item_id,
-                    point_id,
-                }
-            })
-    
-        await trx('point_items').insert(pointItems);
 
-        await trx.commit(); 
-    
-        return res.json({ 
-            id: point_id, 
-            ...point,
+        knex.transaction( trx => {
+            trx.insert(point).into('points')
+            .returning('id')
+            .then(pointId => {
+                const point_id = pointId[0];
+                const pointItems = items
+                .split(',')
+                .map((item:string) => Number(item.trim()))
+                .map((item_id: number) =>{
+                    return {
+                        item_id,
+                        point_id,
+                    }
+                })
+               return trx.insert(pointItems).into('point_items')
+               .then(user => {
+                    return res.json({
+                        id: point_id,
+                        ...point,
+                    })
+                })
+            })
+            .then(trx.commit)
+            .catch(err => res.status(400).json('erro na linha 36'))
+               
         })
+    
+        .catch(err => res.status(400).json('deu merda total'));
+    
+        // const pointItems = items
+        //     .split(',')
+        //     .map((item:string) => Number(item.trim()))
+        //     .map((item_id: number) =>{
+        //         return {
+        //             item_id,
+        //             point_id,
+        //         }
+        //     })
+    
+        // await trx('point_items').insert(pointItems);
+
+        // await trx.commit();
+    
+        // return res.json({ 
+        //     id: point_id, 
+        //     ...point,
+        // })
     }
 
     async show(req: Request, res: Response){
@@ -101,7 +124,7 @@ class PointsController {
     
         return res.json(serializedPoints)    
 
-     return res.json(points);       
+      
     }
 }
 
